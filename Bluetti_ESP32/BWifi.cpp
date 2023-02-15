@@ -157,6 +157,10 @@ void initBWifi(bool resetWifi){
       delay(2000);
       initBWifi(true);
   });
+  server.on("/OTAupdate", [](AsyncWebServerRequest *request) {
+      events.close();
+      request->redirect("http://"+request->host()+"/update");
+  });
   //setup web server events
   events.onConnect([](AsyncEventSourceClient *client){
     if(client->lastId()){
