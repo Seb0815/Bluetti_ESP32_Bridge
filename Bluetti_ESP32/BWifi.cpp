@@ -19,6 +19,7 @@ String lastMsg = "";
 
 bool msgViewerDetails = false;
 bool shouldSaveConfig = false;
+bool OTAUpdateActive = false;
 
 char mqtt_server[40] = "127.0.0.1";
 char mqtt_port[6]  = "1883";
@@ -32,7 +33,6 @@ void saveConfigCallback () {
 ESPBluettiSettings wifiConfig;
 
 ESPBluettiSettings get_esp32_bluetti_settings(){
-    return wifiConfig;
     return wifiConfig;
 }
 
@@ -55,6 +55,10 @@ void setWiFiPowerSavingMode(){
   //esp_wifi_set_ps(WIFI_PS_MAX_MODEM); // maximum power saving, does not make sense here
   //esp_wifi_set_ps(WIFI_PS_NONE); // will cause kernel panic and reboot on my ESP32 (AlexBurghardt)
   esp_wifi_set_ps(WIFI_PS_MIN_MODEM); // default
+}
+
+bool isOTAUpdateActive(){
+    return OTAUpdateActive;
 }
 
 void initBWifi(bool resetWifi){
@@ -135,6 +139,7 @@ void initBWifi(bool resetWifi){
   #endif
 
   server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){
+      OTAUpdateActive = false;
       request->send_P(200, "text/html", index_html, processorWebsiteUpdates);
   });
   server.on("/switchLogging", HTTP_GET, [](AsyncWebServerRequest *request){
@@ -149,6 +154,7 @@ void initBWifi(bool resetWifi){
   });
   server.on("/rebootDevice", [](AsyncWebServerRequest *request) {
       request->send(200, "text/plain", "reboot in 2sec");
+      publishDeviceRebootFault("triggered by user");
       delay(2000);
       ESP.restart();
   });
@@ -158,7 +164,9 @@ void initBWifi(bool resetWifi){
       initBWifi(true);
   });
   server.on("/OTAupdate", [](AsyncWebServerRequest *request) {
-      events.close();
+      OTAUpdateActive = true;
+      publishDeviceRebootFault("triggered by OTAupdate");
+      //events..close();
       request->redirect("http://"+request->host()+"/update");
   });
   //setup web server events
@@ -192,7 +200,7 @@ void handleWebserver() {
     delay(1000);
   }
 
-  if ((millis() - lastTimeWebUpdate) > MSG_VIEWER_REFRESH_CYCLE*1000) {
+  if (((millis() - lastTimeWebUpdate) > MSG_VIEWER_REFRESH_CYCLE*1000) && !isOTAUpdateActive()) {
 
     // Send Events to the Web Server with current data
     events.send("ping",NULL,millis());
@@ -269,6 +277,9 @@ String processorWebsiteUpdates(const String& var){
     else{
       return String("...disabled...");
     }
+  }
+  else{
+    return "";
   }
 }
 

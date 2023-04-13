@@ -7,6 +7,7 @@ extern void publishTopic(enum field_names field_name, String value);
 extern void publishHAConfig();
 extern void publishDeviceState();
 extern void publishDeviceStateStatus();
+extern void publishDeviceRebootFault(String value);
 extern void deviceServoPress(int degree);
 extern void handleMQTT();
 extern void initMQTT();

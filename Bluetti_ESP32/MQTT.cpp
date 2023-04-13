@@ -321,6 +321,8 @@ void publishTopic(enum field_names field_name, String value){
   if (map_field_name(field_name) == "device_type" && value.length() < 3){
 
     Serial.println(F("Error while publishTopic! 'device_type' can't be empty, reboot device)"));
+    publishDeviceRebootFault("useless BT data received");
+    delay(1000);
     ESP.restart();
    
   } 
@@ -368,6 +370,17 @@ void publishDeviceStateStatus(){
   lastMQTTMessage = millis();
   previousDeviceStateStatusPublish = millis();
  
+}
+void publishDeviceRebootFault(String value){
+  char publishTopicBuf[1024];
+
+  ESPBluettiSettings settings = get_esp32_bluetti_settings();
+  sprintf(publishTopicBuf, "bluetti/%s/state/%s", settings.bluetti_device_id, "last_reboot_fault" ); 
+  client.publish(publishTopicBuf, value.c_str());
+  if (!client.publish(publishTopicBuf, value.c_str() )){
+    publishErrorCount++;
+  }
+  lastMQTTMessage = millis();
 }
 
 void initMQTT(){

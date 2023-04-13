@@ -17,6 +17,7 @@ typedef struct{
 extern ESPBluettiSettings get_esp32_bluetti_settings();
 extern void initBWifi(bool resetWifi);
 extern void handleWebserver();
+extern bool isOTAUpdateActive();
 String processorWebsiteUpdates(const String& var);
 extern void AddtoMsgView(String data);
   

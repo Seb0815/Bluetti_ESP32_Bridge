@@ -3,7 +3,7 @@
 #include "utils.h"
 #include "PayloadParser.h"
 #include "BWifi.h"
-
+#include "MQTT.h"
 
 int pollTick = 0;
 
@@ -41,15 +41,15 @@ class BluettiAdvertisedDeviceCallbacks: public BLEAdvertisedDeviceCallbacks {
  /**
    * Called for each advertising BLE server.
    */
-  void onResult(BLEAdvertisedDevice advertisedDevice) {
+  //void onResult(BLEAdvertisedDevice advertisedDevice) {
+  void onResult(BLEAdvertisedDevice *advertisedDevice) {
     Serial.print(F("BLE Advertised Device found: "));
-    Serial.println(advertisedDevice.toString().c_str());
-
+    Serial.println(advertisedDevice->toString().c_str());
      ESPBluettiSettings settings = get_esp32_bluetti_settings();
     // We have found a device, let us now see if it contains the service we are looking for.
-    if (advertisedDevice.haveServiceUUID() && advertisedDevice.isAdvertisingService(serviceUUID) && (strcmp(advertisedDevice.getName().c_str(),settings.bluetti_device_id)==0) ) {
+     if (advertisedDevice->haveServiceUUID() && advertisedDevice->isAdvertisingService(serviceUUID) && (strcmp(advertisedDevice->getName().c_str(),settings.bluetti_device_id)==0) ) {
       BLEDevice::getScan()->stop();
-      bluettiDevice = new BLEAdvertisedDevice(advertisedDevice);
+      bluettiDevice = advertisedDevice;
       doConnect = true;
       doScan = true;
     }
@@ -104,7 +104,8 @@ static void notifyCallback(
 bool connectToServer() {
     Serial.print(F("Forming a connection to "));
     Serial.println(bluettiDevice->getAddress().toString().c_str());
-    
+
+    BLEDevice::setMTU(517);
     BLEClient*  pClient  = BLEDevice::createClient();
     Serial.println(F(" - Created client"));
 
@@ -113,8 +114,7 @@ bool connectToServer() {
     // Connect to the remove BLE Server.
     pClient->connect(bluettiDevice);  // if you pass BLEAdvertisedDevice instead of address, it will be recognized type of peer device address (public or private)
     Serial.println(F(" - Connected to server"));
-    pClient->setMTU(517); //set client to request maximum MTU from server (default is 23 otherwise)
-  
+   
     // Obtain a reference to the service we are after in the remote BLE server.
     BLERemoteService* pRemoteService = pClient->getService(serviceUUID);
     if (pRemoteService == nullptr) {
@@ -206,36 +206,39 @@ void handleBluetooth(){
 
   if ((millis() - lastBTMessage) > (MAX_DISCONNECTED_TIME_UNTIL_REBOOT * 60000)){ 
     Serial.println(F("BT is disconnected over allowed limit, reboot device"));
+    publishDeviceRebootFault("BT disconnected over threshold");
+    delay(1000);
     #ifdef SLEEP_TIME_ON_BT_NOT_AVAIL
         esp_deep_sleep_start();
     #else
         ESP.restart();
     #endif
   }
+  
+  if (connected){
+    if (!isOTAUpdateActive()){
+      // poll for device state
+      if ( millis() - lastBTMessage > BLUETOOTH_QUERY_MESSAGE_DELAY){
 
-  if (connected) {
+        bt_command_t command;
+        command.prefix = 0x01;
+        command.field_update_cmd = 0x03;
+        command.page = bluetti_polling_command[pollTick].f_page;
+        command.offset = bluetti_polling_command[pollTick].f_offset;
+        command.len = (uint16_t) bluetti_polling_command[pollTick].f_size << 8;
+        command.check_sum = modbus_crc((uint8_t*)&command,6);
 
-    // poll for device state
-    if ( millis() - lastBTMessage > BLUETOOTH_QUERY_MESSAGE_DELAY){
+        xQueueSend(commandHandleQueue, &command, portMAX_DELAY);
+        xQueueSend(sendQueue, &command, portMAX_DELAY);
 
-       bt_command_t command;
-       command.prefix = 0x01;
-       command.field_update_cmd = 0x03;
-       command.page = bluetti_polling_command[pollTick].f_page;
-       command.offset = bluetti_polling_command[pollTick].f_offset;
-       command.len = (uint16_t) bluetti_polling_command[pollTick].f_size << 8;
-       command.check_sum = modbus_crc((uint8_t*)&command,6);
-
-       xQueueSend(commandHandleQueue, &command, portMAX_DELAY);
-       xQueueSend(sendQueue, &command, portMAX_DELAY);
-
-       if (pollTick == sizeof(bluetti_polling_command)/sizeof(device_field_data_t)-1 ){
-           pollTick = 0;
-       } else {
-           pollTick++;
-       }
-            
-      lastBTMessage = millis();
+        if (pollTick == sizeof(bluetti_polling_command)/sizeof(device_field_data_t)-1 ){
+            pollTick = 0;
+        } else {
+            pollTick++;
+        }
+              
+        lastBTMessage = millis();
+      }
     }
 
     handleBTCommandQueue();
